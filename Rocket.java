@@ -1,76 +1,144 @@
 package se233.asteroidadpro;
 
-import java.util.ArrayList;
-
 import java.awt.*;
+import java.awt.geom.AffineTransform;
+import java.util.ArrayList;
+import java.util.Iterator;
 
 public class Rocket {
-    public int x, y;
-    private final int SPEED = 10;  // ความเร็วของจรวด
+    // Constants
+    private static final int SCREEN_WIDTH = 800;
+    private static final int SCREEN_HEIGHT = 600;
+    private static final int SHIP_SIZE = 30;
+    private static final int SPEED = 5;
+    private static final int ROTATION_SPEED = 5;
+    private static final int INITIAL_LIVES = 3;
+    private static final long INVULNERABILITY_DURATION = 3000; // 3 seconds
+
+    // Position and movement
+    private double x, y;
+    private double angle;
+    private double dx, dy;
+    private ArrayList<Bullet> bullets;
+    private int lives;
+    private long lastHitTime;
+    private boolean isInvulnerable;
 
     public Rocket(int x, int y) {
         this.x = x;
         this.y = y;
+        this.angle = -90; // Start facing upward
+        this.bullets = new ArrayList<>();
+        this.lives = INITIAL_LIVES;
+        this.lastHitTime = 0;
+        this.dx = 0;
+        this.dy = 0;
     }
 
-    // วาดจรวด
-    public void draw(Graphics g) {
-        g.setColor(Color.BLUE);
-        g.fillRect(x, y, 50, 50);  // วาดสี่เหลี่ยมแทนจรวด
-    }
+    public void moveForward() {
+        double rad = Math.toRadians(angle);
+        dx += Math.cos(rad) * 0.5;
+        dy += Math.sin(rad) * 0.5;
 
-    // การเคลื่อนที่ของจรวด
-    public void moveLeft() {
-        if (x > 0) {
-            x -= SPEED;
+        // Limit speed
+        double speed = Math.sqrt(dx * dx + dy * dy);
+        if (speed > SPEED) {
+            dx = (dx / speed) * SPEED;
+            dy = (dy / speed) * SPEED;
         }
     }
 
-    public void moveRight() {
-        if (x < 750) {  // 750 คือขอบขวาของหน้าจอ (800 - ขนาดจรวด)
-            x += SPEED;
+    public void update() {
+        // Apply movement
+        x += dx;
+        y += dy;
+
+        // Apply friction
+        dx *= 0.98;
+        dy *= 0.98;
+
+        // Check invulnerability
+        isInvulnerable = (System.currentTimeMillis() - lastHitTime) < INVULNERABILITY_DURATION;
+
+        wrapAround();
+        updateBullets();
+    }
+
+    private void wrapAround() {
+        if (x < 0) x = SCREEN_WIDTH;
+        if (x > SCREEN_WIDTH) x = 0;
+        if (y < 0) y = SCREEN_HEIGHT;
+        if (y > SCREEN_HEIGHT) y = 0;
+    }
+
+    public void draw(Graphics2D g2d) {
+        AffineTransform oldTransform = g2d.getTransform();
+
+        // Draw ship
+        g2d.translate(x, y);
+        g2d.rotate(Math.toRadians(angle));
+
+        if (!isInvulnerable || System.currentTimeMillis() % 200 < 100) {
+            drawShip(g2d);
         }
+
+        g2d.setTransform(oldTransform);
+
+        // Draw bullets
+        bullets.forEach(bullet -> bullet.draw(g2d));
     }
 
-    public void moveUp() {
-        if (y > 0) {
-            y -= SPEED;
-        }
+    private void drawShip(Graphics2D g2d) {
+        g2d.setColor(Color.WHITE);
+        int[] xPoints = {0, -SHIP_SIZE/2, SHIP_SIZE/2};
+        int[] yPoints = {-SHIP_SIZE/2, SHIP_SIZE/2, SHIP_SIZE/2};
+        g2d.fillPolygon(xPoints, yPoints, 3);
     }
 
-    public void moveDown() {
-        if (y < 550) {  // 550 คือขอบล่างของหน้าจอ (600 - ขนาดจรวด)
-            y += SPEED;
-        }
-    }
-
-
-    public void shoot() {
-        bullets.add(new Bullet(x + 20, y));
-    }
-
-    public void moveBullets() {
-        for (int i = 0; i < bullets.size(); i++) {
-            Bullet bullet = bullets.get(i);
+    public void updateBullets() {
+        Iterator<Bullet> it = bullets.iterator();
+        while (it.hasNext()) {
+            Bullet bullet = it.next();
             bullet.move();
-            if (bullet.getY() < 0) {
-                bullets.remove(i);
-                i--;
+            if (!bullet.isActive()) {
+                it.remove();
             }
         }
     }
 
-    public ArrayList<Bullet> getBullets() {
-        return bullets;
+    public void shoot() {
+        double rad = Math.toRadians(angle);
+        // Create bullet at ship's nose
+        double bulletX = x + Math.cos(rad) * (SHIP_SIZE/2);
+        double bulletY = y + Math.sin(rad) * (SHIP_SIZE/2);
+        bullets.add(new Bullet(bulletX, bulletY, rad));
     }
 
-    public int getHealth() {
-        return health;
+    public void hit() {
+        if (!isInvulnerable) {
+            lives--;
+            lastHitTime = System.currentTimeMillis();
+            // Reset position
+            x = SCREEN_WIDTH / 2;
+            y = SCREEN_HEIGHT / 2;
+            dx = 0;
+            dy = 0;
+        }
     }
 
-    public void reduceHealth() {
-        health--;
+    public void rotateLeft() { angle -= ROTATION_SPEED; }
+    public void rotateRight() { angle += ROTATION_SPEED; }
+    public void clearBullets() { bullets.clear(); }
+
+    // Getters
+    public ArrayList<Bullet> getBullets() { return bullets; }
+    public int getLives() { return lives; }
+    public Rectangle getBounds() {
+        return new Rectangle(
+                (int)(x - SHIP_SIZE/2),
+                (int)(y - SHIP_SIZE/2),
+                SHIP_SIZE,
+                SHIP_SIZE
+        );
     }
 }
-
-

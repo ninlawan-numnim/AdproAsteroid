@@ -1,99 +1,117 @@
 package se233.asteroidadpro;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
-import java.util.Random;
+import java.util.Iterator;
+public class RocketGame extends JPanel {
+    // Constants
+    private static final int WINDOW_WIDTH = 800;
+    private static final int WINDOW_HEIGHT = 600;
+    private static final int FRAME_DELAY = 16; // ~60 FPS
+    private static final int INITIAL_ASTEROIDS = 4;
+    private static final int MIN_ASTEROIDS = 5;
+    private static final double SPAWN_PROBABILITY = 0.02;
 
-public class RocketGame extends JPanel implements ActionListener, KeyListener {
-    private Timer timer;
-    private Rocket;
+    // Game objects
+    private Rocket rocket;
     private ArrayList<Asteroid> asteroids;
-    private int score = 0;
+    private int score;
+    private int highScore;
+    private GameState gameState;
+    private boolean isPaused;
+    private Timer gameTimer;
+    private boolean[] keyStates;
+
+    private enum GameState { MENU, PLAYING, PAUSED, GAME_OVER }
 
     public RocketGame() {
+        setPreferredSize(new Dimension(WINDOW_WIDTH, WINDOW_HEIGHT));
+        setBackground(Color.BLACK);
         setFocusable(true);
-        setPreferredSize(new Dimension(800, 600));
-        addKeyListener(this);
 
-        rocket = new Rocket(400, 500);  // เริ่มต้นตำแหน่งจรวด
+        keyStates = new boolean[256];
+        gameState = GameState.MENU;
+
+        setupGame();
+        setupTimer();
+        setupKeyBindings();
+    }
+
+    private void setupGame() {
+        rocket = new Rocket(WINDOW_WIDTH/2, WINDOW_HEIGHT/2);
         asteroids = new ArrayList<>();
-        timer = new Timer(30, this);  // อัปเดตทุก 30ms
-        timer.start();
+        score = 0;
+        isPaused = false;
+
+        initializeAsteroids();
     }
 
-    @Override
-    public void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        g.setColor(Color.BLACK);
-        g.fillRect(0, 0, getWidth(), getHeight());
-
-        // วาดจรวด
-        rocket.draw(g);
-
-        // วาดอุกกาบาต
-        for (Asteroid asteroid : asteroids) {
-            asteroid.draw(g);
-        }
-
-        // วาดคะแนนและเลือด
-        g.setColor(Color.WHITE);
-        g.drawString("Score: " + score, 10, 20);
-        g.drawString("Health: " + rocket.getHealth(), 10, 40);
+    private void setupTimer() {
+        gameTimer = new Timer(FRAME_DELAY, e -> updateGame());
     }
 
-    @Override
-    public void actionPerformed(ActionEvent e) {
-        spawnAsteroids();
+    private void setupKeyBindings() {
+        InputMap im = getInputMap(WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = getActionMap();
 
-        // อัปเดตการเคลื่อนที่ของอุกกาบาต
-        for (Asteroid asteroid : asteroids) {
-            asteroid.move();
+        // Movement keys
+        setupKeyBinding(im, am, KeyEvent.VK_LEFT, "LEFT");
+        setupKeyBinding(im, am, KeyEvent.VK_RIGHT, "RIGHT");
+        setupKeyBinding(im, am, KeyEvent.VK_UP, "UP");
 
-            // ตรวจสอบการชนกับจรวด
-            if (asteroid.intersects(rocket)) {
-                rocket.reduceHealth();
-                asteroids.remove(asteroid);
-                if (rocket.getHealth() <= 0) {
-                    timer.stop();
-                    JOptionPane.showMessageDialog(this, "Game Over! Score: " + score);
-                    System.exit(0);
+        // Action keys
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "SPACE");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, 0), "PAUSE");
+
+        am.put("SPACE", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                handleSpaceKey();
+            }
+        });
+
+        am.put("PAUSE", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (gameState == GameState.PLAYING) {
+                    togglePause();
                 }
             }
-        }
-
-        repaint();  // วาดหน้าจอใหม่
+        });
     }
 
-    private void spawnAsteroids() {
-        if (new Random().nextInt(50) == 0) {  // สุ่มสร้างอุกกาบาต
-            asteroids.add(new Asteroid(new Random().nextInt(800), -50));
+    private void setupKeyBinding(InputMap im, ActionMap am, int keyCode, String binding) {
+        im.put(KeyStroke.getKeyStroke(keyCode, 0, false), binding + "_PRESSED");
+        im.put(KeyStroke.getKeyStroke(keyCode, 0, true), binding + "_RELEASED");
+
+        am.put(binding + "_PRESSED", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                keyStates[keyCode] = true;
+            }
+        });
+
+        am.put(binding + "_RELEASED", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                keyStates[keyCode] = false;
+            }
+        });
+    }
+
+    private void initializeAsteroids() {
+        asteroids.clear();
+        for (int i = 0; i < INITIAL_ASTEROIDS; i++) {
+            spawnAsteroid();
         }
     }
 
-    // จัดการการกดปุ่ม
-    @Override
-    public void keyPressed(KeyEvent e) {
-        int key = e.getKeyCode();
-
-        if (key == KeyEvent.VK_LEFT) {
-            rocket.moveLeft();
-        } else if (key == KeyEvent.VK_RIGHT) {
-            rocket.moveRight();
-        } else if (key == KeyEvent.VK_UP) {
-            rocket.moveUp();
-        } else if (key == KeyEvent.VK_DOWN) {
-            rocket.moveDown();
-        } else if (key == KeyEvent.VK_SPACE) {
-            rocket.shoot();
-        }
-    }
-
-    @Override
-    public void keyReleased(KeyEvent e) {}
-
-    @Override
-    public void keyTyped(KeyEvent e) {}
+    private void spawnAsteroid() {
+        double angle = Math.random() * 2 * Math.PI;
+        double distance = Math.max(WINDOW_WIDTH, WINDOW_HEIGHT) / 2.0;
+        double x = WINDOW_WIDTH/2 + Math.cos(angle) * distance;
+        double y = WINDOW_HEIGHT/2 + Math.sin(angle) * distance;
 }
-
-
+}
